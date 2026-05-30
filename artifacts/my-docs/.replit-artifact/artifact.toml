@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "My Docs by NM"
+version = "1.0.0"
+id = "artifacts/my-docs"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 21100
+
+[services.development]
+run = "pnpm --filter @workspace/my-docs run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/my-docs", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/my-docs", "run", "serve" ]
+
+[services.env]
+PORT = "21100"
+BASE_PATH = "/"
