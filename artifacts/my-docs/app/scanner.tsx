@@ -1,6 +1,7 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import * as ImageManipulator from "expo-image-manipulator";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useRef, useState } from "react";
@@ -60,6 +61,7 @@ export default function ScannerScreen() {
   const [category, setCategory] = useState<Category>("custom");
   const [capturing, setCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -71,8 +73,12 @@ export default function ScannerScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     }
     try {
+      // Let autofocus settle before firing shutter (Android needs this)
+      if (Platform.OS === "android") {
+        await new Promise<void>((r) => setTimeout(r, 350));
+      }
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.92,
+        quality: 1,          // capture at maximum sensor quality
         skipProcessing: false,
       });
       if (!photo) return;
@@ -87,6 +93,33 @@ export default function ScannerScreen() {
       Alert.alert("Error", "Failed to capture. Please try again.");
     } finally {
       setCapturing(false);
+    }
+  };
+
+  // Enhance a full (un-cropped) photo when user skips the crop step
+  const enhanceAndSkip = async (photo: CapturedPhoto, side: "front" | "back") => {
+    try {
+      const result = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [{ resize: { width: Math.min(photo.width, 2200) } }],
+        { compress: 0.97, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      if (side === "front") {
+        setFrontFinal(result.uri);
+        setStep("front_preview");
+      } else {
+        setBackFinal(result.uri);
+        setStep("back_preview");
+      }
+    } catch {
+      // fallback: use raw photo
+      if (side === "front") {
+        setFrontFinal(photo.uri);
+        setStep("front_preview");
+      } else {
+        setBackFinal(photo.uri);
+        setStep("back_preview");
+      }
     }
   };
 
@@ -188,13 +221,7 @@ export default function ScannerScreen() {
           origH={photo.height}
           onCropped={step === "front_crop" ? handleFrontCropped : handleBackCropped}
           onSkip={() => {
-            if (step === "front_crop") {
-              setFrontFinal(photo.uri);
-              setStep("front_preview");
-            } else {
-              setBackFinal(photo.uri);
-              setStep("back_preview");
-            }
+            enhanceAndSkip(photo, step === "front_crop" ? "front" : "back");
           }}
         />
       </View>
@@ -228,6 +255,7 @@ export default function ScannerScreen() {
             facing="back"
             autofocus="on"
             enableTorch={torchOn}
+            onCameraReady={() => setCameraReady(true)}
           />
           <View style={styles.camOverlay}>
             <LinearGradient
@@ -391,12 +419,17 @@ export default function ScannerScreen() {
       <View style={[styles.controls, { paddingBottom: bottomPad + 16 }]}>
         {showCamera && (
           <TouchableOpacity
-            style={[styles.captureBtn, capturing && { opacity: 0.55 }]}
+            style={[
+              styles.captureBtn,
+              (capturing || !cameraReady) && { opacity: 0.45 },
+            ]}
             onPress={capture}
-            disabled={capturing}
+            disabled={capturing || !cameraReady}
           >
             {capturing ? (
               <ActivityIndicator color="#FFF" size="large" />
+            ) : !cameraReady ? (
+              <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
             ) : (
               <View style={styles.captureInner} />
             )}
@@ -414,7 +447,7 @@ export default function ScannerScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.rowBtn, styles.primaryBtn, { backgroundColor: colors.primary }]}
-              onPress={() => setStep("back_cam")}
+              onPress={() => { setCameraReady(false); setStep("back_cam"); }}
             >
               <Text style={[styles.rowBtnTxt, { color: "#FFF" }]}>Scan Back</Text>
               <Feather name="arrow-right" size={15} color="#FFF" />

@@ -127,9 +127,9 @@ export function CropView({ uri, origW, origH, onCropped, onSkip }: CropViewProps
         uri,
         [
           { crop: { originX: cropX, originY: cropY, width: cropW, height: cropH } },
-          { resize: { width: 1800 } },
+          { resize: { width: 2000 } },
         ],
-        { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
+        { compress: 0.97, format: ImageManipulator.SaveFormat.JPEG }
       );
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
