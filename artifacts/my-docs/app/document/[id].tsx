@@ -2,7 +2,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Platform,
@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FlipCard } from "@/components/FlipCard";
 import { GlassCard } from "@/components/GlassCard";
+import { RenameModal } from "@/components/RenameModal";
 import { CATEGORIES, useDocuments } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -26,6 +27,7 @@ export default function DocumentScreen() {
   const insets = useSafeAreaInsets();
   const { documents, deleteDocument, renameDocument, toggleFavorite, updateDocumentImage } =
     useDocuments();
+  const [renameVisible, setRenameVisible] = useState(false);
 
   const doc = documents.find((d) => d.id === id);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -50,13 +52,7 @@ export default function DocumentScreen() {
     CATEGORIES.find((c) => c.key === doc.category)?.label ?? "Document";
 
   const handleRename = () => {
-    Alert.prompt(
-      "Rename",
-      "Enter new name",
-      (t) => { if (t?.trim()) renameDocument(doc.id, t.trim()); },
-      "plain-text",
-      doc.name
-    );
+    setRenameVisible(true);
   };
 
   const handleDelete = () => {
@@ -200,6 +196,17 @@ export default function DocumentScreen() {
           />
         </View>
       </ScrollView>
+
+      <RenameModal
+        visible={renameVisible}
+        initialValue={doc.name}
+        onConfirm={(name) => {
+          renameDocument(doc.id, name);
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setRenameVisible(false);
+        }}
+        onCancel={() => setRenameVisible(false)}
+      />
     </View>
   );
 }
