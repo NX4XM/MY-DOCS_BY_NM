@@ -1,7 +1,8 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React from "react";
 import {
   Alert,
   Platform,
@@ -16,14 +17,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FlipCard } from "@/components/FlipCard";
 import { GlassCard } from "@/components/GlassCard";
-import { useDocuments } from "@/context/DocumentContext";
+import { CATEGORIES, useDocuments } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function DocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { documents, deleteDocument, renameDocument } = useDocuments();
+  const { documents, deleteDocument, renameDocument, toggleFavorite, updateDocumentImage } =
+    useDocuments();
 
   const doc = documents.find((d) => d.id === id);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -44,43 +46,63 @@ export default function DocumentScreen() {
     );
   }
 
+  const categoryLabel =
+    CATEGORIES.find((c) => c.key === doc.category)?.label ?? "Document";
+
   const handleRename = () => {
     Alert.prompt(
-      "Rename Document",
-      "Enter a new name",
-      (text) => {
-        if (text?.trim()) renameDocument(doc.id, text.trim());
-      },
+      "Rename",
+      "Enter new name",
+      (t) => { if (t?.trim()) renameDocument(doc.id, t.trim()); },
       "plain-text",
       doc.name
     );
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      "Delete Document",
-      `Delete "${doc.name}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            deleteDocument(doc.id);
-            router.back();
-          },
-        },
-      ]
-    );
+    Alert.alert("Delete", `Delete "${doc.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => { deleteDocument(doc.id); router.back(); },
+      },
+    ]);
   };
 
-  const formatDate = (ts: number) => {
-    return new Date(ts).toLocaleDateString("en-US", {
+  const handleFavorite = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    toggleFavorite(doc.id);
+  };
+
+  const handleReplaceImage = async (side: "front" | "back") => {
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.92,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    await updateDocumentImage(doc.id, side, result.assets[0].uri);
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  };
+
+  const handleMoreMenu = () => {
+    Alert.alert(doc.name, "Choose an action", [
+      { text: "Rename", onPress: handleRename },
+      { text: `Replace Front Image`, onPress: () => handleReplaceImage("front") },
+      { text: `Replace Back Image`, onPress: () => handleReplaceImage("back") },
+      { text: "Delete", style: "destructive", onPress: handleDelete },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const formatDate = (ts: number) =>
+    new Date(ts).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
-  };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -90,10 +112,7 @@ export default function DocumentScreen() {
       <View
         style={[
           styles.header,
-          {
-            paddingTop: topPad + 12,
-            borderBottomColor: colors.border,
-          },
+          { paddingTop: topPad + 12, borderBottomColor: colors.border },
         ]}
       >
         <TouchableOpacity
@@ -102,133 +121,147 @@ export default function DocumentScreen() {
         >
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </TouchableOpacity>
-        <Text
-          style={[styles.headerTitle, { color: colors.foreground }]}
-          numberOfLines={1}
-        >
+
+        <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
           {doc.name}
         </Text>
-        <TouchableOpacity
-          style={[styles.iconBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
-          onPress={() => {
-            Alert.alert(doc.name, "Choose an action", [
-              { text: "Rename", onPress: handleRename },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: handleDelete,
-              },
-              { text: "Cancel", style: "cancel" },
-            ]);
-          }}
-        >
-          <Feather name="more-horizontal" size={18} color={colors.foreground} />
-        </TouchableOpacity>
+
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
+            onPress={handleFavorite}
+          >
+            <Ionicons
+              name={doc.isFavorite ? "star" : "star-outline"}
+              size={17}
+              color={doc.isFavorite ? "#FFC400" : colors.mutedForeground}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
+            onPress={handleMoreMenu}
+          >
+            <Feather name="more-horizontal" size={18} color={colors.foreground} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: bottomPad + 24 },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Flip card */}
-        <FlipCard
-          frontUri={doc.frontImageUri}
-          backUri={doc.backImageUri}
-          name={doc.name}
-        />
+        {/* 3D Flip Card */}
+        <FlipCard frontUri={doc.frontImageUri} backUri={doc.backImageUri} name={doc.name} />
 
-        {/* Info card */}
+        {/* Info */}
         <GlassCard style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <Feather name="file-text" size={15} color={colors.mutedForeground} />
-            <View style={styles.infoText}>
-              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
-                Document Name
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.foreground }]}>
-                {doc.name}
-              </Text>
-            </View>
-          </View>
-          <View
-            style={[styles.divider, { backgroundColor: colors.border }]}
-          />
-          <View style={styles.infoRow}>
-            <Feather name="calendar" size={15} color={colors.mutedForeground} />
-            <View style={styles.infoText}>
-              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
-                Saved On
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.foreground }]}>
-                {formatDate(doc.createdAt)}
-              </Text>
-            </View>
-          </View>
-          <View
-            style={[styles.divider, { backgroundColor: colors.border }]}
-          />
-          <View style={styles.infoRow}>
-            <Feather name="layers" size={15} color={colors.mutedForeground} />
-            <View style={styles.infoText}>
-              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
-                Sides
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.foreground }]}>
-                Front + Back
-              </Text>
-            </View>
-          </View>
+          <InfoRow icon="file-text" label="Name" value={doc.name} colors={colors} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <InfoRow icon="tag" label="Type" value={categoryLabel} colors={colors} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <InfoRow icon="calendar" label="Saved" value={formatDate(doc.createdAt)} colors={colors} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <InfoRow icon="layers" label="Sides" value="Front + Back" colors={colors} />
         </GlassCard>
 
         {/* Actions */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[
-              styles.actionBtn,
-              { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder },
-            ]}
+        <View style={styles.actionsGrid}>
+          <ActionBtn
+            icon="edit-2"
+            label="Rename"
+            color={colors.foreground}
+            bg={colors.glassStrong}
+            border={colors.glassBorder}
             onPress={handleRename}
-          >
-            <Feather name="edit-2" size={16} color={colors.foreground} />
-            <Text style={[styles.actionText, { color: colors.foreground }]}>
-              Rename
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.actionBtn,
-              { backgroundColor: "rgba(255,77,77,0.1)", borderColor: "rgba(255,77,77,0.3)" },
-            ]}
+          />
+          <ActionBtn
+            icon="image"
+            label="Front"
+            color={colors.foreground}
+            bg={colors.glassStrong}
+            border={colors.glassBorder}
+            onPress={() => handleReplaceImage("front")}
+          />
+          <ActionBtn
+            icon="image"
+            label="Back"
+            color={colors.foreground}
+            bg={colors.glassStrong}
+            border={colors.glassBorder}
+            onPress={() => handleReplaceImage("back")}
+          />
+          <ActionBtn
+            icon="trash-2"
+            label="Delete"
+            color={colors.destructive}
+            bg="rgba(255,77,77,0.08)"
+            border="rgba(255,77,77,0.25)"
             onPress={handleDelete}
-          >
-            <Feather name="trash-2" size={16} color={colors.destructive} />
-            <Text style={[styles.actionText, { color: colors.destructive }]}>
-              Delete
-            </Text>
-          </TouchableOpacity>
+          />
         </View>
       </ScrollView>
     </View>
   );
 }
 
+function InfoRow({
+  icon,
+  label,
+  value,
+  colors,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <View style={styles.infoRow}>
+      <Feather name={icon as any} size={14} color={colors.mutedForeground} />
+      <View style={styles.infoText}>
+        <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{label}</Text>
+        <Text style={[styles.infoValue, { color: colors.foreground }]}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function ActionBtn({
+  icon,
+  label,
+  color,
+  bg,
+  border,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  color: string;
+  bg: string;
+  border: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.actionBtn, { backgroundColor: bg, borderColor: border }]}
+      onPress={onPress}
+    >
+      <Feather name={icon as any} size={16} color={color} />
+      <Text style={[styles.actionTxt, { color }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    gap: 10,
   },
   iconBtn: {
     width: 40,
@@ -245,53 +278,54 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     textAlign: "center",
   },
+  headerRight: {
+    flexDirection: "row",
+    gap: 8,
+  },
   content: {
     paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingTop: 20,
     gap: 16,
   },
-  infoCard: {
-    padding: 0,
-  },
+  infoCard: { padding: 0 },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 13,
   },
   infoText: { flex: 1 },
   infoLabel: {
     fontSize: 11,
     fontFamily: "Inter_400Regular",
-    marginBottom: 2,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    marginBottom: 2,
   },
   infoValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Inter_500Medium",
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: 16,
-  },
-  actions: {
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
+  actionsGrid: {
     flexDirection: "row",
-    gap: 12,
+    flexWrap: "wrap",
+    gap: 10,
   },
   actionBtn: {
     flex: 1,
+    minWidth: "44%",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
+    paddingVertical: 13,
     borderRadius: 14,
     borderWidth: 1,
-    gap: 8,
+    gap: 7,
   },
-  actionText: {
-    fontSize: 14,
+  actionTxt: {
+    fontSize: 13,
     fontWeight: "600" as const,
     fontFamily: "Inter_600SemiBold",
   },

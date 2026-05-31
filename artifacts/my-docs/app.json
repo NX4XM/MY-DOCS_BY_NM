@@ -17,14 +17,16 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "My Docs uses the camera to scan your documents and cards.",
-        "NSPhotoLibraryUsageDescription": "My Docs saves scanned documents to your photo library."
+        "NSPhotoLibraryUsageDescription": "My Docs saves scanned documents to your photo library.",
+        "NSPhotoLibraryAddUsageDescription": "My Docs needs to access your photo library."
       }
     },
     "android": {
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
       ]
     },
     "web": {
@@ -44,6 +46,13 @@
         "expo-camera",
         {
           "cameraPermission": "My Docs needs camera access to scan your documents and cards."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow My Docs to access your photos to replace document images.",
+          "cameraPermission": "Allow My Docs to use the camera."
         }
       ]
     ],

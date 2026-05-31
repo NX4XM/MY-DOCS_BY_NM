@@ -1,7 +1,6 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
-import * as ImageManipulator from "expo-image-manipulator";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useRef, useState } from "react";
@@ -11,6 +10,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -20,11 +20,27 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CropView } from "@/components/CropView";
 import { ScanOverlay } from "@/components/ScanOverlay";
-import { useDocuments } from "@/context/DocumentContext";
+import { CATEGORIES, Category, useDocuments } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
-type Step = "front" | "frontPreview" | "back" | "backPreview" | "name";
+type Step =
+  | "front_cam"
+  | "front_crop"
+  | "front_preview"
+  | "back_cam"
+  | "back_crop"
+  | "back_preview"
+  | "name";
+
+type ScanMode = "card" | "a4";
+
+interface CapturedPhoto {
+  uri: string;
+  width: number;
+  height: number;
+}
 
 export default function ScannerScreen() {
   const colors = useColors();
@@ -33,37 +49,26 @@ export default function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
-  const [step, setStep] = useState<Step>("front");
-  const [frontUri, setFrontUri] = useState<string | null>(null);
-  const [backUri, setBackUri] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>("front_cam");
+  const [scanMode, setScanMode] = useState<ScanMode>("card");
+  const [torchOn, setTorchOn] = useState(false);
+  const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
+  const [backPhoto, setBackPhoto] = useState<CapturedPhoto | null>(null);
+  const [frontFinal, setFrontFinal] = useState<string | null>(null);
+  const [backFinal, setBackFinal] = useState<string | null>(null);
   const [docName, setDocName] = useState("");
+  const [category, setCategory] = useState<Category>("custom");
   const [capturing, setCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const enhanceImage = async (uri: string): Promise<string> => {
-    try {
-      const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: 1800 } }],
-        {
-          compress: 0.92,
-          format: ImageManipulator.SaveFormat.JPEG,
-        }
-      );
-      return result.uri;
-    } catch {
-      return uri;
-    }
-  };
-
   const capture = async () => {
     if (!cameraRef.current || capturing) return;
     setCapturing(true);
     if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     }
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -71,26 +76,34 @@ export default function ScannerScreen() {
         skipProcessing: false,
       });
       if (!photo) return;
-      const enhanced = await enhanceImage(photo.uri);
-      if (step === "front") {
-        setFrontUri(enhanced);
-        setStep("frontPreview");
+      if (step === "front_cam") {
+        setFrontPhoto({ uri: photo.uri, width: photo.width ?? 1200, height: photo.height ?? 900 });
+        setStep("front_crop");
       } else {
-        setBackUri(enhanced);
-        setStep("backPreview");
+        setBackPhoto({ uri: photo.uri, width: photo.width ?? 1200, height: photo.height ?? 900 });
+        setStep("back_crop");
       }
     } catch {
-      Alert.alert("Error", "Failed to capture photo. Please try again.");
+      Alert.alert("Error", "Failed to capture. Please try again.");
     } finally {
       setCapturing(false);
     }
   };
 
+  const handleFrontCropped = (uri: string) => {
+    setFrontFinal(uri);
+    setStep("front_preview");
+  };
+  const handleBackCropped = (uri: string) => {
+    setBackFinal(uri);
+    setStep("back_preview");
+  };
+
   const handleSave = async () => {
-    if (!frontUri || !backUri || !docName.trim()) return;
+    if (!frontFinal || !backFinal || !docName.trim()) return;
     setSaving(true);
     try {
-      await addDocument(docName.trim(), frontUri, backUri);
+      await addDocument(docName.trim(), category, frontFinal, backFinal);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -102,26 +115,26 @@ export default function ScannerScreen() {
     }
   };
 
-  const stepLabel = {
-    front: "Scan Front Side",
-    frontPreview: "Front Preview",
-    back: "Scan Back Side",
-    backPreview: "Back Preview",
-    name: "Name Document",
-  }[step];
-
   const stepNum = {
-    front: 1,
-    frontPreview: 1,
-    back: 2,
-    backPreview: 2,
+    front_cam: 1, front_crop: 1, front_preview: 1,
+    back_cam: 2, back_crop: 2, back_preview: 2,
     name: 3,
   }[step];
 
-  // Permission not determined yet
+  const stepLabel = {
+    front_cam: "Scan Front Side",
+    front_crop: "Align & Crop",
+    front_preview: "Front Preview",
+    back_cam: "Scan Back Side",
+    back_crop: "Align & Crop",
+    back_preview: "Back Preview",
+    name: "Name Document",
+  }[step];
+
+  // Permission loading
   if (!permission) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
+      <View style={[styles.center, { backgroundColor: "#000" }]}>
         <ActivityIndicator color={colors.primary} />
       </View>
     );
@@ -142,9 +155,9 @@ export default function ScannerScreen() {
           style={[styles.permBtn, { backgroundColor: colors.primary }]}
           onPress={requestPermission}
         >
-          <Text style={styles.permBtnText}>Allow Camera Access</Text>
+          <Text style={styles.permBtnText}>Allow Camera</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14 }}>
           <Text style={{ color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
             Cancel
           </Text>
@@ -153,150 +166,276 @@ export default function ScannerScreen() {
     );
   }
 
-  const showCamera = step === "front" || step === "back";
+  // Crop step
+  if ((step === "front_crop" && frontPhoto) || (step === "back_crop" && backPhoto)) {
+    const photo = step === "front_crop" ? frontPhoto! : backPhoto!;
+    return (
+      <View style={[styles.root, { backgroundColor: "#000" }]}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <View style={[styles.topBar, { paddingTop: topPad + 8 }]}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => setStep(step === "front_crop" ? "front_cam" : "back_cam")}
+          >
+            <Feather name="arrow-left" size={18} color="#FFF" />
+          </TouchableOpacity>
+          <Text style={styles.stepLabel}>{stepLabel}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <CropView
+          uri={photo.uri}
+          origW={photo.width}
+          origH={photo.height}
+          onCropped={step === "front_crop" ? handleFrontCropped : handleBackCropped}
+          onSkip={() => {
+            if (step === "front_crop") {
+              setFrontFinal(photo.uri);
+              setStep("front_preview");
+            } else {
+              setBackFinal(photo.uri);
+              setStep("back_preview");
+            }
+          }}
+        />
+      </View>
+    );
+  }
+
+  const showCamera = step === "front_cam" || step === "back_cam";
 
   return (
-    <View style={[styles.root, { backgroundColor: "#000000" }]}>
+    <View style={[styles.root, { backgroundColor: "#000" }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: topPad + 8 }]}>
-        <TouchableOpacity
-          style={[styles.backBtn, { backgroundColor: "rgba(255,255,255,0.12)" }]}
-          onPress={() => router.back()}
-        >
-          <Feather name="x" size={18} color="#FFFFFF" />
+        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
+          <Feather name="x" size={18} color="#FFF" />
         </TouchableOpacity>
         <View style={styles.stepInfo}>
           <Text style={styles.stepLabel}>{stepLabel}</Text>
-          <Text style={styles.stepNum}>Step {stepNum} of 3</Text>
+          <Text style={styles.stepSub}>Step {stepNum} of 3</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Camera / Preview area */}
+      {/* Camera or Preview or Name */}
       {showCamera ? (
-        <View style={styles.cameraContainer}>
+        <View style={{ flex: 1 }}>
           <CameraView
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             facing="back"
+            enableTorch={torchOn}
           />
-          <View style={styles.overlay}>
+          <View style={styles.camOverlay}>
             <LinearGradient
-              colors={["rgba(0,0,0,0.5)", "transparent", "transparent", "rgba(0,0,0,0.5)"]}
+              colors={["rgba(0,0,0,0.55)", "transparent", "transparent", "rgba(0,0,0,0.55)"]}
               style={StyleSheet.absoluteFill}
             />
-            <ScanOverlay />
-            <Text style={styles.overlayHint}>
-              Position the {step === "front" ? "front" : "back"} of your document within the frame
+
+            {/* Scanner mode toggle */}
+            <View style={styles.modeToggle}>
+              <TouchableOpacity
+                style={[
+                  styles.modeBtn,
+                  scanMode === "card" && styles.modeActive,
+                ]}
+                onPress={() => {
+                  setScanMode("card");
+                  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Ionicons name="card-outline" size={14} color={scanMode === "card" ? "#FFF" : "rgba(255,255,255,0.5)"} />
+                <Text style={[styles.modeTxt, { color: scanMode === "card" ? "#FFF" : "rgba(255,255,255,0.5)" }]}>
+                  Card
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modeBtn,
+                  scanMode === "a4" && styles.modeActive,
+                ]}
+                onPress={() => {
+                  setScanMode("a4");
+                  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Ionicons name="document-outline" size={14} color={scanMode === "a4" ? "#FFF" : "rgba(255,255,255,0.5)"} />
+                <Text style={[styles.modeTxt, { color: scanMode === "a4" ? "#FFF" : "rgba(255,255,255,0.5)" }]}>
+                  A4
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Scan overlay */}
+            <ScanOverlay mode={scanMode} />
+
+            <Text style={styles.camHint}>
+              Position the {step === "front_cam" ? "front" : "back"} within the frame
             </Text>
+
+            {/* Torch button */}
+            <TouchableOpacity
+              style={[styles.torchBtn, torchOn && styles.torchActive]}
+              onPress={() => {
+                setTorchOn((v) => !v);
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+            >
+              <Ionicons
+                name={torchOn ? "flash" : "flash-outline"}
+                size={20}
+                color={torchOn ? "#FFC400" : "#FFF"}
+              />
+            </TouchableOpacity>
           </View>
         </View>
       ) : step === "name" ? (
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.nameContainer}
+          style={{ flex: 1 }}
         >
-          <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
-          <Text style={styles.nameTitle}>Almost done!</Text>
-          <Text style={[styles.nameSubtitle, { color: colors.mutedForeground }]}>
-            Give this document a name
-          </Text>
-          <TextInput
-            value={docName}
-            onChangeText={setDocName}
-            placeholder="e.g. Passport, ID Card, License..."
-            placeholderTextColor="rgba(255,255,255,0.3)"
-            autoFocus
-            style={[
-              styles.nameInput,
-              {
-                backgroundColor: colors.glassStrong,
-                borderColor: colors.glassBorder,
-                color: colors.foreground,
-              },
-            ]}
-            returnKeyType="done"
-            onSubmitEditing={handleSave}
-            maxLength={50}
-          />
+          <ScrollView
+            contentContainerStyle={styles.nameContainer}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
+            <Text style={styles.nameTitle}>Name Your Document</Text>
+            <Text style={[styles.nameSub, { color: colors.mutedForeground }]}>
+              Give it a name you'll recognize
+            </Text>
+            <TextInput
+              value={docName}
+              onChangeText={setDocName}
+              placeholder="e.g. Passport, Aadhaar, John's ATM..."
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              autoFocus
+              style={[
+                styles.nameInput,
+                {
+                  backgroundColor: colors.glassStrong,
+                  borderColor: colors.glassBorder,
+                  color: colors.foreground,
+                },
+              ]}
+              returnKeyType="done"
+              maxLength={50}
+            />
+
+            {/* Category picker */}
+            <Text style={[styles.catLabel, { color: colors.mutedForeground }]}>
+              Document Type
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.catList}
+            >
+              {CATEGORIES.map((cat) => (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[
+                    styles.catChip,
+                    {
+                      backgroundColor:
+                        category === cat.key
+                          ? colors.primary
+                          : colors.glassStrong,
+                      borderColor:
+                        category === cat.key
+                          ? colors.primary
+                          : colors.glassBorder,
+                    },
+                  ]}
+                  onPress={() => {
+                    setCategory(cat.key);
+                    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.catChipTxt,
+                      {
+                        color:
+                          category === cat.key ? "#FFF" : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </ScrollView>
         </KeyboardAvoidingView>
       ) : (
         <View style={styles.previewContainer}>
-          {(step === "frontPreview" ? frontUri : backUri) && (
-            <Image
-              source={{ uri: (step === "frontPreview" ? frontUri : backUri)! }}
-              style={styles.previewImage}
-              resizeMode="contain"
-            />
-          )}
+          <Image
+            source={{
+              uri: (step === "front_preview" ? frontFinal : backFinal) ?? "",
+            }}
+            style={styles.previewImage}
+            resizeMode="contain"
+          />
           <View style={styles.previewBadge}>
-            <Text style={styles.previewBadgeText}>
-              {step === "frontPreview" ? "FRONT" : "BACK"} CAPTURED
+            <Text style={styles.previewBadgeTxt}>
+              {step === "front_preview" ? "FRONT" : "BACK"} CAPTURED
             </Text>
           </View>
         </View>
       )}
 
       {/* Bottom controls */}
-      <View
-        style={[
-          styles.controls,
-          { paddingBottom: bottomPad + 16 },
-        ]}
-      >
+      <View style={[styles.controls, { paddingBottom: bottomPad + 16 }]}>
         {showCamera && (
           <TouchableOpacity
-            style={[
-              styles.captureBtn,
-              capturing && { opacity: 0.6 },
-            ]}
+            style={[styles.captureBtn, capturing && { opacity: 0.55 }]}
             onPress={capture}
             disabled={capturing}
           >
             {capturing ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color="#FFF" size="large" />
             ) : (
               <View style={styles.captureInner} />
             )}
           </TouchableOpacity>
         )}
 
-        {step === "frontPreview" && (
-          <View style={styles.previewActions}>
+        {step === "front_preview" && (
+          <View style={styles.rowBtns}>
             <TouchableOpacity
-              style={[styles.actionBtn, { borderColor: colors.glassBorder, backgroundColor: colors.glassStrong }]}
-              onPress={() => setStep("front")}
+              style={[styles.rowBtn, { borderColor: colors.glassBorder, backgroundColor: colors.glassStrong }]}
+              onPress={() => setStep("front_cam")}
             >
-              <Feather name="rotate-ccw" size={16} color={colors.foreground} />
-              <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Retake</Text>
+              <Feather name="rotate-ccw" size={15} color="#FFF" />
+              <Text style={[styles.rowBtnTxt, { color: "#FFF" }]}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionBtn, styles.primaryBtn, { backgroundColor: colors.primary }]}
-              onPress={() => setStep("back")}
+              style={[styles.rowBtn, styles.primaryBtn, { backgroundColor: colors.primary }]}
+              onPress={() => setStep("back_cam")}
             >
-              <Text style={[styles.actionBtnText, { color: "#FFFFFF" }]}>Scan Back</Text>
-              <Feather name="arrow-right" size={16} color="#FFFFFF" />
+              <Text style={[styles.rowBtnTxt, { color: "#FFF" }]}>Scan Back</Text>
+              <Feather name="arrow-right" size={15} color="#FFF" />
             </TouchableOpacity>
           </View>
         )}
 
-        {step === "backPreview" && (
-          <View style={styles.previewActions}>
+        {step === "back_preview" && (
+          <View style={styles.rowBtns}>
             <TouchableOpacity
-              style={[styles.actionBtn, { borderColor: colors.glassBorder, backgroundColor: colors.glassStrong }]}
-              onPress={() => setStep("back")}
+              style={[styles.rowBtn, { borderColor: colors.glassBorder, backgroundColor: colors.glassStrong }]}
+              onPress={() => setStep("back_cam")}
             >
-              <Feather name="rotate-ccw" size={16} color={colors.foreground} />
-              <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Retake</Text>
+              <Feather name="rotate-ccw" size={15} color="#FFF" />
+              <Text style={[styles.rowBtnTxt, { color: "#FFF" }]}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionBtn, styles.primaryBtn, { backgroundColor: colors.primary }]}
+              style={[styles.rowBtn, styles.primaryBtn, { backgroundColor: colors.primary }]}
               onPress={() => setStep("name")}
             >
-              <Text style={[styles.actionBtnText, { color: "#FFFFFF" }]}>Continue</Text>
-              <Feather name="arrow-right" size={16} color="#FFFFFF" />
+              <Text style={[styles.rowBtnTxt, { color: "#FFF" }]}>Continue</Text>
+              <Feather name="arrow-right" size={15} color="#FFF" />
             </TouchableOpacity>
           </View>
         )}
@@ -312,11 +451,11 @@ export default function ScannerScreen() {
             disabled={!docName.trim() || saving}
           >
             {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color="#FFF" />
             ) : (
               <>
-                <Ionicons name="save-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.saveBtnText}>Save Document</Text>
+                <Ionicons name="save-outline" size={18} color="#FFF" />
+                <Text style={styles.saveBtnTxt}>Save Document</Text>
               </>
             )}
           </TouchableOpacity>
@@ -338,72 +477,107 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 14,
     zIndex: 10,
   },
-  backBtn: {
+  iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
   },
-  stepInfo: {
-    flex: 1,
-    alignItems: "center",
-  },
+  stepInfo: { flex: 1, alignItems: "center" },
   stepLabel: {
-    color: "#FFFFFF",
+    color: "#FFF",
     fontSize: 16,
     fontWeight: "600" as const,
     fontFamily: "Inter_600SemiBold",
   },
-  stepNum: {
+  stepSub: {
     color: "rgba(255,255,255,0.4)",
     fontSize: 12,
     marginTop: 2,
     fontFamily: "Inter_400Regular",
   },
-  cameraContainer: {
-    flex: 1,
-    position: "relative",
-  },
-  overlay: {
+  camOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
-    gap: 24,
+    gap: 20,
   },
-  overlayHint: {
+  modeToggle: {
     position: "absolute",
-    bottom: 24,
+    top: 16,
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 20,
+    padding: 3,
+    gap: 2,
+  },
+  modeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 17,
+  },
+  modeActive: {
+    backgroundColor: "rgba(107,142,255,0.8)",
+  },
+  modeTxt: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  camHint: {
+    position: "absolute",
+    bottom: 20,
     color: "rgba(255,255,255,0.6)",
     fontSize: 13,
     textAlign: "center",
     paddingHorizontal: 40,
     fontFamily: "Inter_400Regular",
   },
+  torchBtn: {
+    position: "absolute",
+    bottom: 20,
+    right: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  torchActive: {
+    backgroundColor: "rgba(255,196,0,0.2)",
+    borderColor: "#FFC400",
+  },
   previewContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    gap: 14,
   },
   previewImage: {
     width: "100%",
-    height: "80%",
+    height: "82%",
     borderRadius: 12,
   },
   previewBadge: {
-    marginTop: 16,
-    backgroundColor: "rgba(107,142,255,0.2)",
+    backgroundColor: "rgba(107,142,255,0.18)",
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: "rgba(107,142,255,0.4)",
   },
-  previewBadgeText: {
+  previewBadgeTxt: {
     color: "#6B8EFF",
     fontSize: 11,
     fontWeight: "700" as const,
@@ -411,22 +585,23 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
   },
   nameContainer: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 12,
+    paddingHorizontal: 28,
+    paddingVertical: 32,
+    gap: 10,
   },
   nameTitle: {
-    color: "#FFFFFF",
-    fontSize: 26,
+    color: "#FFF",
+    fontSize: 24,
     fontWeight: "700" as const,
     fontFamily: "Inter_700Bold",
     marginTop: 8,
   },
-  nameSubtitle: {
+  nameSub: {
     fontSize: 14,
-    marginBottom: 8,
+    marginBottom: 6,
     fontFamily: "Inter_400Regular",
   },
   nameInput: {
@@ -438,12 +613,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter_400Regular",
   },
+  catLabel: {
+    alignSelf: "flex-start",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
+  catList: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  catChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  catChipTxt: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+  },
   controls: {
     paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingTop: 14,
     alignItems: "center",
     gap: 12,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
   captureBtn: {
     width: 72,
@@ -451,7 +647,7 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     backgroundColor: "rgba(255,255,255,0.15)",
     borderWidth: 3,
-    borderColor: "#FFFFFF",
+    borderColor: "#FFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -459,14 +655,14 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFF",
   },
-  previewActions: {
+  rowBtns: {
     flexDirection: "row",
     gap: 12,
     width: "100%",
   },
-  actionBtn: {
+  rowBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -474,13 +670,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
-    gap: 8,
+    gap: 7,
   },
-  primaryBtn: {
-    flex: 1.5,
-    borderWidth: 0,
-  },
-  actionBtnText: {
+  primaryBtn: { flex: 1.5, borderWidth: 0 },
+  rowBtnTxt: {
     fontSize: 15,
     fontWeight: "600" as const,
     fontFamily: "Inter_600SemiBold",
@@ -494,8 +687,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     gap: 10,
   },
-  saveBtnText: {
-    color: "#FFFFFF",
+  saveBtnTxt: {
+    color: "#FFF",
     fontSize: 16,
     fontWeight: "600" as const,
     fontFamily: "Inter_600SemiBold",
@@ -520,7 +713,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   permBtnText: {
-    color: "#FFFFFF",
+    color: "#FFF",
     fontSize: 15,
     fontWeight: "600" as const,
     fontFamily: "Inter_600SemiBold",

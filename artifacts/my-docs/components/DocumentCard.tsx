@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useRef } from "react";
+import React from "react";
 import {
   Alert,
   Platform,
@@ -18,7 +18,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
-import { Document, useDocuments } from "@/context/DocumentContext";
+import { CATEGORIES, Document, useDocuments } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
 interface DocumentCardProps {
@@ -28,7 +28,7 @@ interface DocumentCardProps {
 
 export function DocumentCard({ document, width }: DocumentCardProps) {
   const colors = useColors();
-  const { deleteDocument, renameDocument } = useDocuments();
+  const { deleteDocument, renameDocument, toggleFavorite } = useDocuments();
   const scale = useSharedValue(1);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -38,7 +38,6 @@ export function DocumentCard({ document, width }: DocumentCardProps) {
   const handlePressIn = () => {
     scale.value = withSpring(0.96, { damping: 15 });
   };
-
   const handlePressOut = () => {
     scale.value = withSpring(1, { damping: 15 });
   };
@@ -54,16 +53,18 @@ export function DocumentCard({ document, width }: DocumentCardProps) {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    Alert.alert(document.name, "What would you like to do?", [
+    Alert.alert(document.name, "Choose an action", [
+      {
+        text: document.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+        onPress: () => toggleFavorite(document.id),
+      },
       {
         text: "Rename",
         onPress: () => {
           Alert.prompt(
-            "Rename Document",
+            "Rename",
             "Enter a new name",
-            (text) => {
-              if (text?.trim()) renameDocument(document.id, text.trim());
-            },
+            (text) => { if (text?.trim()) renameDocument(document.id, text.trim()); },
             "plain-text",
             document.name
           );
@@ -73,24 +74,17 @@ export function DocumentCard({ document, width }: DocumentCardProps) {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          Alert.alert(
-            "Delete Document",
-            `Delete "${document.name}"? This cannot be undone.`,
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: () => deleteDocument(document.id),
-              },
-            ]
-          );
+          Alert.alert("Delete", `Delete "${document.name}"?`, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Delete", style: "destructive", onPress: () => deleteDocument(document.id) },
+          ]);
         },
       },
       { text: "Cancel", style: "cancel" },
     ]);
   };
 
+  const categoryLabel = CATEGORIES.find((c) => c.key === document.category)?.label ?? "";
   const cardHeight = width * 0.64;
 
   return (
@@ -107,35 +101,44 @@ export function DocumentCard({ document, width }: DocumentCardProps) {
             width,
             height: cardHeight,
             borderRadius: colors.radius,
-            borderColor: colors.glassBorder,
+            borderColor: document.isFavorite
+              ? "rgba(255, 196, 0, 0.4)"
+              : colors.glassBorder,
           },
         ]}
       >
         <Image
           source={{ uri: document.frontImageUri }}
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: colors.radius },
-          ]}
+          style={[StyleSheet.absoluteFill, { borderRadius: colors.radius }]}
           contentFit="cover"
           transition={200}
         />
         <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.85)"]}
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: colors.radius },
-          ]}
-          start={{ x: 0, y: 0.4 }}
+          colors={["transparent", "rgba(0,0,0,0.88)"]}
+          style={[StyleSheet.absoluteFill, { borderRadius: colors.radius }]}
+          start={{ x: 0, y: 0.3 }}
           end={{ x: 0, y: 1 }}
         />
+
+        {/* Category chip */}
+        {categoryLabel ? (
+          <View style={styles.categoryChip}>
+            <Text style={styles.categoryText}>{categoryLabel}</Text>
+          </View>
+        ) : null}
+
+        {/* Favorite star */}
+        {document.isFavorite && (
+          <View style={styles.starBadge}>
+            <Ionicons name="star" size={11} color="#FFC400" />
+          </View>
+        )}
+
+        {/* Name */}
         <View style={styles.label}>
           <Text style={styles.name} numberOfLines={1}>
             {document.name}
           </Text>
-          <View style={styles.flipHint}>
-            <Ionicons name="sync" size={10} color="rgba(255,255,255,0.5)" />
-          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -148,23 +151,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: "rgba(255,255,255,0.07)",
   },
+  categoryChip: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  categoryText: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 9,
+    fontWeight: "600" as const,
+    letterSpacing: 0.5,
+    fontFamily: "Inter_600SemiBold",
+  },
+  starBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 6,
+    padding: 4,
+  },
   label: {
     position: "absolute",
     bottom: 10,
-    left: 12,
-    right: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    left: 10,
+    right: 10,
   },
   name: {
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "600" as const,
-    flex: 1,
     fontFamily: "Inter_600SemiBold",
-  },
-  flipHint: {
-    marginLeft: 6,
   },
 });
