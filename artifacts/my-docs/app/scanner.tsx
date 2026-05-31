@@ -226,6 +226,7 @@ export default function ScannerScreen() {
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             facing="back"
+            autofocus="on"
             enableTorch={torchOn}
           />
           <View style={styles.camOverlay}>

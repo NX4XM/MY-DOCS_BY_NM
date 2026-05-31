@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { Alert, Platform } from "react-native";
@@ -46,6 +47,7 @@ interface DocumentContextValue {
     backUri: string
   ) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
+  deleteAllDocuments: () => Promise<void>;
   renameDocument: (id: string, name: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
   updateDocumentImage: (
@@ -78,9 +80,19 @@ async function saveLocal(uri: string, id: string, side: string): Promise<string>
   return dest;
 }
 
+async function persist(docs: Document[]) {
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
+}
+
 export function DocumentProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Keep a ref in sync so callbacks always have the latest list without stale closures
+  const docsRef = useRef<Document[]>([]);
+
+  useEffect(() => {
+    docsRef.current = documents;
+  }, [documents]);
 
   const load = useCallback(async () => {
     try {
@@ -89,6 +101,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const parsed: Document[] = JSON.parse(stored);
         parsed.sort((a, b) => b.createdAt - a.createdAt);
         setDocuments(parsed);
+        docsRef.current = parsed;
       }
     } catch {}
     setIsLoading(false);
@@ -97,10 +110,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     load();
   }, [load]);
-
-  const persist = async (docs: Document[]) => {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-  };
 
   const addDocument = async (
     name: string,
@@ -120,67 +129,70 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       isFavorite: false,
       createdAt: Date.now(),
     };
-    setDocuments((prev) => {
-      const updated = [doc, ...prev];
-      persist(updated);
-      return updated;
-    });
+    const updated = [doc, ...docsRef.current];
+    setDocuments(updated);
+    await persist(updated);
   };
 
-  const deleteDocument = async (id: string) => {
-    setDocuments((prev) => {
-      const doc = prev.find((d) => d.id === id);
-      if (doc && Platform.OS !== "web") {
+  const deleteDocument = useCallback(async (id: string) => {
+    const current = docsRef.current;
+    const doc = current.find((d) => d.id === id);
+    if (doc && Platform.OS !== "web") {
+      FileSystem.deleteAsync(doc.frontImageUri, { idempotent: true }).catch(() => {});
+      FileSystem.deleteAsync(doc.backImageUri, { idempotent: true }).catch(() => {});
+    }
+    const updated = current.filter((d) => d.id !== id);
+    setDocuments(updated);
+    await persist(updated);
+  }, []);
+
+  const deleteAllDocuments = useCallback(async () => {
+    const current = docsRef.current;
+    if (Platform.OS !== "web") {
+      for (const doc of current) {
         FileSystem.deleteAsync(doc.frontImageUri, { idempotent: true }).catch(() => {});
         FileSystem.deleteAsync(doc.backImageUri, { idempotent: true }).catch(() => {});
       }
-      const updated = prev.filter((d) => d.id !== id);
-      persist(updated);
-      return updated;
-    });
-  };
+    }
+    setDocuments([]);
+    await persist([]);
+  }, []);
 
-  const renameDocument = async (id: string, name: string) => {
-    setDocuments((prev) => {
-      const updated = prev.map((d) => (d.id === id ? { ...d, name } : d));
-      persist(updated);
-      return updated;
-    });
-  };
+  const renameDocument = useCallback(async (id: string, name: string) => {
+    const updated = docsRef.current.map((d) => (d.id === id ? { ...d, name } : d));
+    setDocuments(updated);
+    await persist(updated);
+  }, []);
 
-  const toggleFavorite = async (id: string) => {
-    setDocuments((prev) => {
-      const updated = prev.map((d) =>
-        d.id === id ? { ...d, isFavorite: !d.isFavorite } : d
-      );
-      persist(updated);
-      return updated;
-    });
-  };
+  const toggleFavorite = useCallback(async (id: string) => {
+    const updated = docsRef.current.map((d) =>
+      d.id === id ? { ...d, isFavorite: !d.isFavorite } : d
+    );
+    setDocuments(updated);
+    await persist(updated);
+  }, []);
 
-  const updateDocumentImage = async (
+  const updateDocumentImage = useCallback(async (
     id: string,
     side: "front" | "back",
     newUri: string
   ) => {
-    const doc = documents.find((d) => d.id === id);
+    const doc = docsRef.current.find((d) => d.id === id);
     if (!doc) return;
     const localUri = await saveLocal(newUri, id + "_" + Date.now(), side);
     const oldUri = side === "front" ? doc.frontImageUri : doc.backImageUri;
     if (Platform.OS !== "web") {
       FileSystem.deleteAsync(oldUri, { idempotent: true }).catch(() => {});
     }
-    setDocuments((prev) => {
-      const updated = prev.map((d) => {
-        if (d.id !== id) return d;
-        return side === "front"
-          ? { ...d, frontImageUri: localUri }
-          : { ...d, backImageUri: localUri };
-      });
-      persist(updated);
-      return updated;
+    const updated = docsRef.current.map((d) => {
+      if (d.id !== id) return d;
+      return side === "front"
+        ? { ...d, frontImageUri: localUri }
+        : { ...d, backImageUri: localUri };
     });
-  };
+    setDocuments(updated);
+    await persist(updated);
+  }, []);
 
   const exportBackup = async () => {
     if (Platform.OS === "web") {
@@ -189,7 +201,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     try {
       const backupDocs = await Promise.all(
-        documents.map(async (doc) => {
+        docsRef.current.map(async (doc) => {
           const frontB64 = await FileSystem.readAsStringAsync(doc.frontImageUri, {
             encoding: FileSystem.EncodingType.Base64,
           }).catch(() => "");
@@ -206,7 +218,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         mimeType: "application/json",
         dialogTitle: "Save My Docs Backup",
       });
-    } catch (e) {
+    } catch {
       Alert.alert("Export Failed", "Could not create backup file.");
     }
   };
@@ -257,7 +269,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setDocuments(restored);
       await persist(restored);
       Alert.alert("Restored", `${restored.length} document(s) restored successfully.`);
-    } catch (e) {
+    } catch {
       Alert.alert("Restore Failed", "Could not read backup file. Make sure it's a valid My Docs backup.");
     }
   };
@@ -269,6 +281,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         isLoading,
         addDocument,
         deleteDocument,
+        deleteAllDocuments,
         renameDocument,
         toggleFavorite,
         updateDocumentImage,

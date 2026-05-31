@@ -2,10 +2,9 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import {
   Alert,
-  Linking,
   Platform,
   ScrollView,
   StatusBar,
@@ -15,13 +14,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { GlassCard } from "@/components/GlassCard";
@@ -31,26 +23,9 @@ import { useColors } from "@/hooks/useColors";
 
 function AboutCard() {
   const colors = useColors();
-  const glowOpacity = useSharedValue(0.5);
-
-  useEffect(() => {
-    glowOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1800 }),
-        withTiming(0.4, { duration: 1800 })
-      ),
-      -1,
-      true
-    );
-  }, []);
-
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-  }));
 
   return (
     <View style={styles.aboutWrapper}>
-      <Animated.View style={[styles.aboutGlow, glowStyle]} />
       <GlassCard style={styles.aboutCard} borderRadius={20}>
         <View style={styles.aboutInner}>
           <View style={[styles.aboutLogo, { backgroundColor: "rgba(107,142,255,0.12)", borderColor: "rgba(107,142,255,0.25)" }]}>
@@ -84,7 +59,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { isPinEnabled, removePin, lock } = usePin();
-  const { documents, deleteDocument, exportBackup, importBackup } = useDocuments();
+  const { documents, deleteAllDocuments, exportBackup, importBackup } = useDocuments();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -112,9 +87,7 @@ export default function SettingsScreen() {
           text: "Delete All",
           style: "destructive",
           onPress: async () => {
-            for (const doc of documents) {
-              await deleteDocument(doc.id);
-            }
+            await deleteAllDocuments();
             if (Platform.OS !== "web") {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
@@ -382,18 +355,7 @@ const styles = StyleSheet.create({
 
   // About card
   aboutWrapper: {
-    position: "relative",
     marginTop: 4,
-  },
-  aboutGlow: {
-    position: "absolute",
-    top: "20%",
-    left: "20%",
-    right: "20%",
-    height: 100,
-    backgroundColor: "#6B8EFF",
-    borderRadius: 50,
-    opacity: 0.12,
   },
   aboutCard: {
     padding: 0,
