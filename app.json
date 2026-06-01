@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "My Docs by NM",
+    "slug": "my-docs-by-nm",
+    "version": "1.0.0",
+    "android": {
+      "package": "com.noor.mydocsbynm"
+    }
+  }
+}
