@@ -1,11 +1,15 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
+  Dimensions,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -21,13 +25,56 @@ import { RenameModal } from "@/components/RenameModal";
 import { CATEGORIES, useDocuments } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
+const { width: SW, height: SH } = Dimensions.get("window");
+
+function FullScreenPreview({
+  uri,
+  side,
+  visible,
+  onClose,
+}: {
+  uri: string;
+  side: "FRONT" | "BACK";
+  visible: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={fs.overlay}>
+        <StatusBar barStyle="light-content" backgroundColor="rgba(0,0,0,0.97)" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={fs.badge}>
+          <Text style={fs.badgeTxt}>{side}</Text>
+        </View>
+        <Image
+          source={{ uri }}
+          style={fs.image}
+          contentFit="contain"
+          transition={150}
+        />
+        <TouchableOpacity style={fs.closeBtn} onPress={onClose} activeOpacity={0.8}>
+          <Text style={fs.closeTxt}>✕  Close</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+}
+
 export default function DocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { documents, deleteDocument, renameDocument, toggleFavorite, updateDocumentImage } =
     useDocuments();
+
   const [renameVisible, setRenameVisible] = useState(false);
+  const [previewSide, setPreviewSide] = useState<"FRONT" | "BACK" | null>(null);
 
   const doc = documents.find((d) => d.id === id);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -51,9 +98,7 @@ export default function DocumentScreen() {
   const categoryLabel =
     CATEGORIES.find((c) => c.key === doc.category)?.label ?? "Document";
 
-  const handleRename = () => {
-    setRenameVisible(true);
-  };
+  const handleRename = () => setRenameVisible(true);
 
   const handleDelete = () => {
     Alert.alert("Delete", `Delete "${doc.name}"?`, [
@@ -73,7 +118,7 @@ export default function DocumentScreen() {
 
   const handleReplaceImage = async (side: "front" | "back") => {
     const result = await ImagePicker.launchCameraAsync({
-      quality: 0.92,
+      quality: 0.97,
       allowsEditing: false,
     });
     if (result.canceled || !result.assets?.[0]) return;
@@ -86,8 +131,8 @@ export default function DocumentScreen() {
   const handleMoreMenu = () => {
     Alert.alert(doc.name, "Choose an action", [
       { text: "Rename", onPress: handleRename },
-      { text: `Replace Front Image`, onPress: () => handleReplaceImage("front") },
-      { text: `Replace Back Image`, onPress: () => handleReplaceImage("back") },
+      { text: "Replace Front Image", onPress: () => handleReplaceImage("front") },
+      { text: "Replace Back Image", onPress: () => handleReplaceImage("back") },
       { text: "Delete", style: "destructive", onPress: handleDelete },
       { text: "Cancel", style: "cancel" },
     ]);
@@ -105,12 +150,7 @@ export default function DocumentScreen() {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* Header */}
-      <View
-        style={[
-          styles.header,
-          { paddingTop: topPad + 12, borderBottomColor: colors.border },
-        ]}
-      >
+      <View style={[styles.header, { paddingTop: topPad + 12, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={[styles.iconBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
           onPress={() => router.back()}
@@ -146,8 +186,33 @@ export default function DocumentScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* 3D Flip Card */}
-        <FlipCard frontUri={doc.frontImageUri} backUri={doc.backImageUri} name={doc.name} />
+        {/* 3D Flip Card — category-aware aspect ratio */}
+        <FlipCard
+          frontUri={doc.frontImageUri}
+          backUri={doc.backImageUri}
+          name={doc.name}
+          category={doc.category}
+        />
+
+        {/* Quick preview buttons — VIEW only, no camera */}
+        <View style={styles.previewRow}>
+          <TouchableOpacity
+            style={[styles.previewBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
+            onPress={() => setPreviewSide("FRONT")}
+            activeOpacity={0.75}
+          >
+            <Feather name="eye" size={15} color={colors.primary} />
+            <Text style={[styles.previewBtnTxt, { color: colors.foreground }]}>View Front</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.previewBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
+            onPress={() => setPreviewSide("BACK")}
+            activeOpacity={0.75}
+          >
+            <Feather name="eye" size={15} color={colors.primary} />
+            <Text style={[styles.previewBtnTxt, { color: colors.foreground }]}>View Back</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Info */}
         <GlassCard style={styles.infoCard}>
@@ -171,16 +236,16 @@ export default function DocumentScreen() {
             onPress={handleRename}
           />
           <ActionBtn
-            icon="image"
-            label="Front"
+            icon="camera"
+            label="Replace Front"
             color={colors.foreground}
             bg={colors.glassStrong}
             border={colors.glassBorder}
             onPress={() => handleReplaceImage("front")}
           />
           <ActionBtn
-            icon="image"
-            label="Back"
+            icon="camera"
+            label="Replace Back"
             color={colors.foreground}
             bg={colors.glassStrong}
             border={colors.glassBorder}
@@ -197,6 +262,14 @@ export default function DocumentScreen() {
         </View>
       </ScrollView>
 
+      {/* Full-screen image preview (View Front / View Back) */}
+      <FullScreenPreview
+        visible={previewSide !== null}
+        uri={previewSide === "FRONT" ? doc.frontImageUri : doc.backImageUri}
+        side={previewSide ?? "FRONT"}
+        onClose={() => setPreviewSide(null)}
+      />
+
       <RenameModal
         visible={renameVisible}
         initialValue={doc.name}
@@ -212,10 +285,7 @@ export default function DocumentScreen() {
 }
 
 function InfoRow({
-  icon,
-  label,
-  value,
-  colors,
+  icon, label, value, colors,
 }: {
   icon: string;
   label: string;
@@ -234,12 +304,7 @@ function InfoRow({
 }
 
 function ActionBtn({
-  icon,
-  label,
-  color,
-  bg,
-  border,
-  onPress,
+  icon, label, color, bg, border, onPress,
 }: {
   icon: string;
   label: string;
@@ -285,14 +350,25 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     textAlign: "center",
   },
-  headerRight: {
+  headerRight: { flexDirection: "row", gap: 8 },
+  content: { paddingHorizontal: 24, paddingTop: 20, gap: 16 },
+  previewRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
   },
-  content: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    gap: 16,
+  previewBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  previewBtnTxt: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
   },
   infoCard: { padding: 0 },
   infoRow: {
@@ -310,16 +386,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 2,
   },
-  infoValue: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-  },
+  infoValue: { fontSize: 14, fontFamily: "Inter_500Medium" },
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
-  actionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
+  actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   actionBtn: {
     flex: 1,
     minWidth: "44%",
@@ -333,6 +402,55 @@ const styles = StyleSheet.create({
   },
   actionTxt: {
     fontSize: 13,
+    fontWeight: "600" as const,
+    fontFamily: "Inter_600SemiBold",
+  },
+});
+
+const fs = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.97)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    top: 60,
+    alignSelf: "center",
+    backgroundColor: "rgba(107,142,255,0.2)",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "rgba(107,142,255,0.4)",
+    zIndex: 10,
+  },
+  badgeTxt: {
+    color: "#6B8EFF",
+    fontSize: 12,
+    fontWeight: "700" as const,
+    letterSpacing: 1.5,
+    fontFamily: "Inter_700Bold",
+  },
+  image: {
+    width: SW,
+    height: SH * 0.78,
+  },
+  closeBtn: {
+    position: "absolute",
+    bottom: 52,
+    alignSelf: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  closeTxt: {
+    color: "#FFF",
+    fontSize: 15,
     fontWeight: "600" as const,
     fontFamily: "Inter_600SemiBold",
   },
