@@ -30,7 +30,6 @@ interface FlipCardProps {
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const CARD_W = SCREEN_WIDTH - 48;
 
 const A4_CATEGORIES: Category[] = ["a4", "passport", "custom"];
 
@@ -39,14 +38,13 @@ function isA4(category?: Category): boolean {
 }
 
 function cardDimensions(category?: Category): { w: number; h: number } {
+  const cardW = SCREEN_WIDTH - 48;
   if (isA4(category)) {
-    // A4 portrait ratio 1:√2 ≈ 1:1.414
-    const h = Math.min(CARD_W * 1.414, SCREEN_HEIGHT * 0.55);
+    const h = Math.min(cardW * 1.414, SCREEN_HEIGHT * 0.55);
     const w = h / 1.414;
     return { w, h };
   }
-  // Credit/ID card landscape ratio
-  return { w: CARD_W, h: CARD_W * 0.63 };
+  return { w: cardW, h: cardW * 0.63 };
 }
 
 function ImagePreviewModal({
@@ -69,7 +67,7 @@ function ImagePreviewModal({
       onRequestClose={onClose}
     >
       <View style={preview.overlay}>
-        <StatusBar barStyle="light-content" backgroundColor="rgba(0,0,0,0.95)" />
+        <StatusBar barStyle="light-content" backgroundColor="rgba(0,0,0,0.97)" />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={preview.tag}>
           <Text style={preview.tagTxt}>{side}</Text>
@@ -94,7 +92,7 @@ export function FlipCard({ frontUri, backUri, name, category }: FlipCardProps) {
   const [previewSide, setPreviewSide] = useState<"FRONT" | "BACK" | null>(null);
   const progress = useSharedValue(0);
 
-  const { w: CARD_W_D, h: CARD_H } = cardDimensions(category);
+  const { w: cardW, h: cardH } = cardDimensions(category);
   const radius = isA4(category) ? 8 : colors.radius + 4;
 
   const frontStyle = useAnimatedStyle(() => {
@@ -124,52 +122,69 @@ export function FlipCard({ frontUri, backUri, name, category }: FlipCardProps) {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const next = isFlipped ? 0 : 1;
     progress.value = withSpring(next, { damping: 18, stiffness: 95, mass: 0.9 });
-    setIsFlipped(!isFlipped);
+    setIsFlipped((v) => !v);
   };
 
-  const face = (side: "FRONT" | "BACK", uri: string, animStyle: object) => (
-    <Animated.View
-      style={[
-        styles.face,
-        { width: CARD_W_D, height: CARD_H, borderRadius: radius, borderColor: colors.glassBorder },
-        animStyle,
-      ]}
-    >
-      <Image
-        source={{ uri }}
-        style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
-        contentFit="cover"
-        transition={200}
-      />
-      <View style={styles.sideTag}>
-        <Text style={styles.sideText}>{side}</Text>
-      </View>
-      {/* Tap hint overlay — long press to preview full screen */}
-      <TouchableOpacity
-        style={styles.previewHitArea}
-        onLongPress={() => setPreviewSide(side)}
-        activeOpacity={1}
-      />
-    </Animated.View>
-  );
+  const handleLongPress = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setPreviewSide(isFlipped ? "BACK" : "FRONT");
+  };
 
   return (
     <View style={styles.wrapper}>
+      {/* Single touchable — tap = flip, long-press = fullscreen preview */}
       <TouchableOpacity
-        activeOpacity={1}
+        activeOpacity={0.95}
         onPress={handleFlip}
-        style={[styles.cardContainer, { width: CARD_W_D, height: CARD_H }]}
+        onLongPress={handleLongPress}
+        delayLongPress={400}
+        style={[styles.cardContainer, { width: cardW, height: cardH }]}
       >
-        {face("FRONT", frontUri, frontStyle)}
-        {face("BACK", backUri, backStyle)}
+        {/* Front face */}
+        <Animated.View
+          style={[
+            styles.face,
+            { width: cardW, height: cardH, borderRadius: radius, borderColor: colors.glassBorder },
+            frontStyle,
+          ]}
+        >
+          <Image
+            source={{ uri: frontUri }}
+            style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
+            contentFit="cover"
+            transition={200}
+          />
+          <View style={styles.sideTag}>
+            <Text style={styles.sideText}>FRONT</Text>
+          </View>
+        </Animated.View>
+
+        {/* Back face */}
+        <Animated.View
+          style={[
+            styles.face,
+            { width: cardW, height: cardH, borderRadius: radius, borderColor: colors.glassBorder },
+            backStyle,
+          ]}
+        >
+          <Image
+            source={{ uri: backUri }}
+            style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
+            contentFit="cover"
+            transition={200}
+          />
+          <View style={styles.sideTag}>
+            <Text style={styles.sideText}>BACK</Text>
+          </View>
+        </Animated.View>
       </TouchableOpacity>
 
       <View style={styles.hintRow}>
         <Text style={styles.hintText}>
-          {isFlipped ? "Showing back · tap to flip" : "Showing front · tap to flip"}
+          {isFlipped ? "Back · tap to flip" : "Front · tap to flip"}
         </Text>
         <Text style={styles.hintSep}>·</Text>
-        <Text style={styles.hintText}>long-press to expand</Text>
+        <Text style={styles.hintText}>hold to expand</Text>
       </View>
 
       <ImagePreviewModal
@@ -203,7 +218,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    zIndex: 2,
   },
   sideText: {
     color: "rgba(255,255,255,0.7)",
@@ -212,15 +226,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     fontFamily: "Inter_700Bold",
   },
-  previewHitArea: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
-  },
   hintRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 16,
+    marginTop: 14,
   },
   hintSep: {
     color: "rgba(255,255,255,0.2)",
@@ -236,7 +246,7 @@ const styles = StyleSheet.create({
 const preview = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.96)",
+    backgroundColor: "rgba(0,0,0,0.97)",
     alignItems: "center",
     justifyContent: "center",
   },
