@@ -1,3 +1,7 @@
+- name: Init EAS Project
+        run: npx eas init --id dummy --non-interactive || true
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 name: Build APK
 
 on:
