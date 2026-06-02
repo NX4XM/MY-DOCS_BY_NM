@@ -25,10 +25,6 @@ jobs:
         with:
           version: 9
 
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
-
       - name: Install all workspace dependencies
         run: pnpm install
 
@@ -38,13 +34,15 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Register project with Expo (first time only)
+      - name: Initialize EAS project (register on expo.dev)
         working-directory: artifacts/my-docs
-        run: eas build:configure --platform android --non-interactive
-        continue-on-error: true
+        run: eas init --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build Android APK
         working-directory: artifacts/my-docs
-        run: eas build --platform android --profile preview --non-interactive --output-metro-config-path metro.config.js
+        run: eas build --platform android --profile preview --non-interactive
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_NO_TELEMETRY: 1
