@@ -6,6 +6,10 @@
   "build": {
     "preview": {
       "distribution": "internal",
+      "node": "20.19.4",
+      "env": {
+        "EAS_NO_FROZEN_LOCKFILE": "1"
+      },
       "android": {
         "buildType": "apk"
       }
