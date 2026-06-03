@@ -1,14 +1,10 @@
 name: Build Android APK
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build APK with EAS
     runs-on: ubuntu-latest
 
     steps:
@@ -28,20 +24,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Setup Expo and EAS CLI
+      - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Initialize EAS
-        run: |
-          if [ ! -f eas.json ]; then
-            echo '{"cli":{"version":">= 5.0.0"},"build":{"preview":{"android":{"buildType":"apk"}}},"submit":{}}' > eas.json
-          fi
+      - name: Sync EAS project
+        run: eas project:info
 
-      - name: Build Android APK
+      - name: Build APK
         run: eas build --platform android --profile preview --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_NO_TELEMETRY: 1
+          
