@@ -29,14 +29,13 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Initialize Real EAS Project
-        run: eas init --force --non-interactive
+        run: cd artifacts/my-docs && eas init --force --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build APK
-        run: eas build --platform android --profile preview --non-interactive
+        run: cd artifacts/my-docs && eas build --platform android --profile preview --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_NO_TELEMETRY: 1
-
           
