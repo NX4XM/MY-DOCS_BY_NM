@@ -34,6 +34,12 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Initialize EAS
+        run: |
+          if [ ! -f eas.json ]; then
+            echo '{"cli":{"version":">= 5.0.0"},"build":{"preview":{"android":{"buildType":"apk"}}},"submit":{}}' > eas.json
+          fi
+
       - name: Build Android APK
         run: eas build --platform android --profile preview --non-interactive
         env:
