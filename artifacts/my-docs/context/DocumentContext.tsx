@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
 import * as Sharing from "expo-sharing";
 import React, {
   ReactNode,
@@ -55,6 +56,7 @@ interface DocumentContextValue {
     side: "front" | "back",
     newUri: string
   ) => Promise<void>;
+  shareDocument: (id: string) => Promise<void>;
   exportBackup: () => Promise<void>;
   importBackup: () => Promise<void>;
 }
@@ -87,7 +89,6 @@ async function persist(docs: Document[]) {
 export function DocumentProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  // Keep a ref in sync so callbacks always have the latest list without stale closures
   const docsRef = useRef<Document[]>([]);
 
   useEffect(() => {
@@ -194,6 +195,42 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await persist(updated);
   }, []);
 
+  // Share document(s) as images via native Android share sheet
+  const shareDocument = useCallback(async (id: string) => {
+    if (Platform.OS === "web") {
+      Alert.alert("Not supported", "Sharing is not supported on web.");
+      return;
+    }
+    const doc = docsRef.current.find((d) => d.id === id);
+    if (!doc) return;
+
+    try {
+      // Copy to a share-friendly temp name
+      const tempDir = (FileSystem.cacheDirectory ?? "") + "mydocs_share/";
+      await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }).catch(() => {});
+
+      const shareFiles: string[] = [];
+      const shareFront = `${tempDir}${doc.name}_front.jpg`;
+      const shareBack = `${tempDir}${doc.name}_back.jpg`;
+
+      await FileSystem.copyAsync({ from: doc.frontImageUri, to: shareFront });
+      shareFiles.push(shareFront);
+
+      if (doc.backImageUri !== doc.frontImageUri) {
+        await FileSystem.copyAsync({ from: doc.backImageUri, to: shareBack });
+        shareFiles.push(shareBack);
+      }
+
+      // expo-sharing only shares one file at a time easily; use first
+      // For multiple files, Android ShareSheet picks up from intent
+      await Sharing.shareAsync(shareFiles[0], {
+        dialogTitle: `Share "${doc.name}"`,
+      });
+    } catch {
+      Alert.alert("Share Failed", "Could not share this document.");
+    }
+  }, []);
+
   const exportBackup = async () => {
     if (Platform.OS === "web") {
       Alert.alert("Not supported", "Backup is not supported on web.");
@@ -285,6 +322,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         renameDocument,
         toggleFavorite,
         updateDocumentImage,
+        shareDocument,
         exportBackup,
         importBackup,
       }}

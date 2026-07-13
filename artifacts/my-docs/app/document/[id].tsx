@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlipCard } from "@/components/FlipCard";
 import { GlassCard } from "@/components/GlassCard";
 import { RenameModal } from "@/components/RenameModal";
+import { ZoomableImage } from "@/components/ZoomableImage";
 import { CATEGORIES, useDocuments } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -52,12 +53,8 @@ function FullScreenPreview({
         <View style={fs.badge}>
           <Text style={fs.badgeTxt}>{side}</Text>
         </View>
-        <Image
-          source={{ uri }}
-          style={fs.image}
-          contentFit="contain"
-          transition={150}
-        />
+        {/* Zoomable image with pinch, pan, double-tap */}
+        <ZoomableImage uri={uri} />
         <TouchableOpacity style={fs.closeBtn} onPress={onClose} activeOpacity={0.8}>
           <Text style={fs.closeTxt}>✕  Close</Text>
         </TouchableOpacity>
@@ -70,7 +67,7 @@ export default function DocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { documents, deleteDocument, renameDocument, toggleFavorite, updateDocumentImage } =
+  const { documents, deleteDocument, renameDocument, toggleFavorite, updateDocumentImage, shareDocument } =
     useDocuments();
 
   const [renameVisible, setRenameVisible] = useState(false);
@@ -116,6 +113,11 @@ export default function DocumentScreen() {
     toggleFavorite(doc.id);
   };
 
+  const handleShare = async () => {
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await shareDocument(doc.id);
+  };
+
   const handleReplaceImage = async (side: "front" | "back") => {
     const result = await ImagePicker.launchCameraAsync({
       quality: 0.97,
@@ -131,6 +133,7 @@ export default function DocumentScreen() {
   const handleMoreMenu = () => {
     Alert.alert(doc.name, "Choose an action", [
       { text: "Rename", onPress: handleRename },
+      { text: "Share", onPress: handleShare },
       { text: "Replace Front Image", onPress: () => handleReplaceImage("front") },
       { text: "Replace Back Image", onPress: () => handleReplaceImage("back") },
       { text: "Delete", style: "destructive", onPress: handleDelete },
@@ -194,14 +197,14 @@ export default function DocumentScreen() {
           category={doc.category}
         />
 
-        {/* Quick preview buttons — VIEW only, no camera */}
+        {/* Quick preview buttons — VIEW with ZOOM */}
         <View style={styles.previewRow}>
           <TouchableOpacity
             style={[styles.previewBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
             onPress={() => setPreviewSide("FRONT")}
             activeOpacity={0.75}
           >
-            <Feather name="eye" size={15} color={colors.primary} />
+            <Feather name="maximize-2" size={15} color={colors.primary} />
             <Text style={[styles.previewBtnTxt, { color: colors.foreground }]}>View Front</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -209,7 +212,7 @@ export default function DocumentScreen() {
             onPress={() => setPreviewSide("BACK")}
             activeOpacity={0.75}
           >
-            <Feather name="eye" size={15} color={colors.primary} />
+            <Feather name="maximize-2" size={15} color={colors.primary} />
             <Text style={[styles.previewBtnTxt, { color: colors.foreground }]}>View Back</Text>
           </TouchableOpacity>
         </View>
@@ -227,6 +230,14 @@ export default function DocumentScreen() {
 
         {/* Actions */}
         <View style={styles.actionsGrid}>
+          <ActionBtn
+            icon="share-2"
+            label="Share"
+            color={colors.foreground}
+            bg={colors.glassStrong}
+            border={colors.glassBorder}
+            onPress={handleShare}
+          />
           <ActionBtn
             icon="edit-2"
             label="Rename"
@@ -262,7 +273,7 @@ export default function DocumentScreen() {
         </View>
       </ScrollView>
 
-      {/* Full-screen image preview (View Front / View Back) */}
+      {/* Full-screen zoomable image preview */}
       <FullScreenPreview
         visible={previewSide !== null}
         uri={previewSide === "FRONT" ? doc.frontImageUri : doc.backImageUri}
@@ -432,10 +443,6 @@ const fs = StyleSheet.create({
     fontWeight: "700" as const,
     letterSpacing: 1.5,
     fontFamily: "Inter_700Bold",
-  },
-  image: {
-    width: SW,
-    height: SH * 0.78,
   },
   closeBtn: {
     position: "absolute",

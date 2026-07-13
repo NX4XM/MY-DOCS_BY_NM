@@ -203,18 +203,30 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: colors.primary, bottom: bottomPad + 24 }]}
-        onPress={() => {
-          if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          router.push("/scanner");
-        }}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="scan" size={20} color="#FFF" />
-        <Text style={styles.fabTxt}>Scan</Text>
-      </TouchableOpacity>
+      {/* FABs */}
+      <View style={[styles.fabCol, { bottom: bottomPad + 24 }]}>
+        <TouchableOpacity
+          style={[styles.fabSecondary, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
+          onPress={() => {
+            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push("/pdf-import");
+          }}
+          activeOpacity={0.85}
+        >
+          <Feather name="file-text" size={18} color={colors.foreground} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push("/scanner");
+          }}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="scan" size={20} color="#FFF" />
+          <Text style={styles.fabTxt}>Scan</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -334,9 +346,13 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontFamily: "Inter_400Regular",
   },
-  fab: {
+  fabCol: {
     position: "absolute",
     right: 20,
+    gap: 12,
+    alignItems: "flex-end",
+  },
+  fab: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
@@ -348,6 +364,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 16,
     elevation: 10,
+  },
+  fabSecondary: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   fabTxt: {
     color: "#FFF",

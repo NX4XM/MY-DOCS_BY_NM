@@ -475,6 +475,19 @@ export default function ScannerScreen() {
                   </>
                 )}
               </TouchableOpacity>
+
+              <View style={styles.sourceDivider}>
+                <Text style={styles.sourceDividerTxt}>or</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.sourceBtn, { backgroundColor: "rgba(255,255,255,0.1)", borderColor: "rgba(255,255,255,0.2)" }]}
+                onPress={() => router.push("/pdf-import")}
+                disabled={picking}
+              >
+                <Feather name="file-text" size={16} color="#FFF" />
+                <Text style={styles.sourceBtnTxt}>PDF</Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
