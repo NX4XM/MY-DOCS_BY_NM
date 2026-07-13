@@ -1,13 +1,11 @@
 import { Image } from "expo-image";
-import React, { useCallback } from "react";
+import React from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import {
   Gesture,
   GestureDetector,
-  GestureHandlerRootView,
 } from "react-native-gesture-handler";
 import Animated, {
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -15,27 +13,17 @@ import Animated, {
 
 interface ZoomableImageProps {
   uri: string;
-  onTap?: () => void;
 }
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
-export function ZoomableImage({ uri, onTap }: ZoomableImageProps) {
+export function ZoomableImage({ uri }: ZoomableImageProps) {
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const savedScale = useSharedValue(1);
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
-
-  const reset = useCallback(() => {
-    scale.value = withTiming(1, { duration: 200 });
-    translateX.value = withTiming(0, { duration: 200 });
-    translateY.value = withTiming(0, { duration: 200 });
-    savedScale.value = 1;
-    savedTranslateX.value = 0;
-    savedTranslateY.value = 0;
-  }, [scale, translateX, translateY, savedScale, savedTranslateX, savedTranslateY]);
 
   const pinch = Gesture.Pinch()
     .onStart(() => {
@@ -93,16 +81,8 @@ export function ZoomableImage({ uri, onTap }: ZoomableImageProps) {
       }
     });
 
-  const singleTap = Gesture.Tap()
-    .numberOfTaps(1)
-    .onEnd(() => {
-      if (onTap) {
-        runOnJS(onTap)();
-      }
-    });
-
   const composed = Gesture.Simultaneous(
-    Gesture.Race(singleTap, doubleTap),
+    Gesture.Race(doubleTap),
     pinch,
     pan
   );
@@ -116,25 +96,22 @@ export function ZoomableImage({ uri, onTap }: ZoomableImageProps) {
   }));
 
   return (
-    <GestureHandlerRootView style={styles.root}>
-      <GestureDetector gesture={composed}>
-        <View style={styles.container}>
-          <Animated.View style={[styles.imageWrap, animStyle]}>
-            <Image
-              source={{ uri }}
-              style={styles.image}
-              contentFit="contain"
-              transition={150}
-            />
-          </Animated.View>
-        </View>
-      </GestureDetector>
-    </GestureHandlerRootView>
+    <GestureDetector gesture={composed}>
+      <View style={styles.container}>
+        <Animated.View style={[styles.imageWrap, animStyle]}>
+          <Image
+            source={{ uri }}
+            style={styles.image}
+            contentFit="contain"
+            transition={150}
+          />
+        </Animated.View>
+      </View>
+    </GestureDetector>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { width: SW, height: SH * 0.78 },
   container: {
     flex: 1,
     alignItems: "center",

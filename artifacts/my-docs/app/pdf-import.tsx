@@ -66,14 +66,18 @@ export default function PdfImportScreen() {
 
   // Generate thumbnails for all pages
   const loadPdf = async (path: string) => {
+    if (Platform.OS === "web") {
+      Alert.alert("Not available", "PDF import is only supported on the mobile app.");
+      return;
+    }
     setLoading(true);
     setPdfPath(path);
     try {
-      const { filePaths } = await PdfThumbnail.generateAllPages(path, 400);
-      const pgs: PdfPage[] = filePaths.map((uri, i) => ({
-        uri,
-        width: 400,
-        height: 0,
+      const results = await PdfThumbnail.generateAllPages(path, 400);
+      const pgs: PdfPage[] = results.map((result, i) => ({
+        uri: result.uri,
+        width: result.width,
+        height: result.height,
         selected: false,
         index: i,
       }));

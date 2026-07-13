@@ -230,7 +230,7 @@ export default function ScannerScreen() {
           <Text style={styles.permBtnText}>Allow Camera</Text>
         </TouchableOpacity>
 
-        {/* Still allow gallery/files even without camera */}
+        {/* Still allow gallery/files/pdf even without camera */}
         <View style={styles.permAltRow}>
           <TouchableOpacity
             style={[styles.permAltBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
@@ -245,6 +245,13 @@ export default function ScannerScreen() {
           >
             <Feather name="folder" size={16} color={colors.foreground} />
             <Text style={[styles.permAltTxt, { color: colors.foreground }]}>Files</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.permAltBtn, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}
+            onPress={() => router.push("/pdf-import")}
+          >
+            <Feather name="file-text" size={16} color={colors.foreground} />
+            <Text style={[styles.permAltTxt, { color: colors.foreground }]}>PDF</Text>
           </TouchableOpacity>
         </View>
 

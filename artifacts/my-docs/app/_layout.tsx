@@ -44,6 +44,7 @@ function RootLayoutNav() {
           options={{ headerShown: false, presentation: "fullScreenModal", animation: "slide_from_bottom" }}
         />
         <Stack.Screen name="document/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="pdf-import" options={{ headerShown: false, presentation: "fullScreenModal", animation: "slide_from_bottom" }} />
         <Stack.Screen name="settings" options={{ headerShown: false }} />
         <Stack.Screen
           name="pin"

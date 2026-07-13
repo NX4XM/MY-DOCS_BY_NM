@@ -19,6 +19,8 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
+import { ZoomableImage } from "./ZoomableImage";
+
 import { Category } from "@/context/DocumentContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -72,12 +74,7 @@ function ImagePreviewModal({
         <View style={preview.tag}>
           <Text style={preview.tagTxt}>{side}</Text>
         </View>
-        <Image
-          source={{ uri }}
-          style={preview.image}
-          contentFit="contain"
-          transition={150}
-        />
+        <ZoomableImage uri={uri} />
         <TouchableOpacity style={preview.closeBtn} onPress={onClose} activeOpacity={0.8}>
           <Text style={preview.closeTxt}>✕  Close</Text>
         </TouchableOpacity>
