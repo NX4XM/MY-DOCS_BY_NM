@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "My Docs by NM",
-    "slug": "my-docs",
-    "version": "1.0.0",
+    "name": "My Docs by NM v2",
+    "slug": "my-docs-v2",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "my-docs",
+    "scheme": "my-docs-v2",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
@@ -22,8 +22,8 @@
       }
     },
     "android": {
-      "package": "com.mydocsbynm.app",
-      "versionCode": 1,
+      "package": "com.mydocsbynm.appv2",
+      "versionCode": 2,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
