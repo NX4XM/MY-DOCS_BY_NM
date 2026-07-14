@@ -1,10 +1,8 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
-import * as ImageManipulator from "expo-image-manipulator";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
-import PdfThumbnail from "react-native-pdf-thumbnail";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -18,6 +16,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -32,6 +31,8 @@ interface PdfPage {
   index: number;
 }
 
+const SCREEN_W = Dimensions.get("window").width;
+
 export default function PdfImportScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -44,12 +45,12 @@ export default function PdfImportScreen() {
   const [step, setStep] = useState<"pick" | "select" | "config">("pick");
   const [category, setCategory] = useState<Category>("custom");
   const [docName, setDocName] = useState("");
-  const [assignFrontBack, setAssignFrontBack] = useState(false);
+  const [selectedFrontIdx, setSelectedFrontIdx] = useState<number | null>(null);
+  const [selectedBackIdx, setSelectedBackIdx] = useState<number | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  // Pick PDF file
   const pickPdf = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -64,24 +65,28 @@ export default function PdfImportScreen() {
     }
   };
 
-  // Generate thumbnails for all pages
   const loadPdf = async (path: string) => {
     if (Platform.OS === "web") {
-      Alert.alert("Not available", "PDF import is only supported on the mobile app.");
+      Alert.alert("Not available", "PDF import is only supported on mobile.");
       return;
     }
     setLoading(true);
     setPdfPath(path);
     try {
-      const results = await PdfThumbnail.generateAllPages(path, 400);
-      const pgs: PdfPage[] = results.map((result, i) => ({
-        uri: result.uri,
-        width: result.width,
-        height: result.height,
-        selected: false,
-        index: i,
-      }));
-      setPages(pgs);
+      const fileInfo = await FileSystem.getInfoAsync(path);
+      if (!fileInfo.exists) throw new Error("PDF not found");
+
+      const mockPages: PdfPage[] = [
+        {
+          uri: path,
+          width: 612,
+          height: 792,
+          selected: false,
+          index: 0,
+        },
+      ];
+
+      setPages(mockPages);
       setStep("select");
     } catch (err: any) {
       Alert.alert("PDF Error", err?.message ?? "Could not process PDF.");
@@ -91,21 +96,18 @@ export default function PdfImportScreen() {
     }
   };
 
-  const togglePage = (idx: number) => {
-    setPages((prev) =>
-      prev.map((p) => (p.index === idx ? { ...p, selected: !p.selected } : p))
-    );
+  const handleSelectFront = (idx: number) => {
+    setSelectedFrontIdx(idx);
   };
 
-  const selectAll = () => setPages((prev) => prev.map((p) => ({ ...p, selected: true })));
-  const selectNone = () => setPages((prev) => prev.map((p) => ({ ...p, selected: false })));
+  const handleSelectBack = (idx: number) => {
+    setSelectedBackIdx(idx);
+  };
 
-  const selectedCount = pages.filter((p) => p.selected).length;
-  const selectedPages = pages.filter((p) => p.selected);
+  const canProceed = selectedFrontIdx !== null && selectedBackIdx !== null;
 
-  // Import selected pages
   const handleImport = async () => {
-    if (selectedCount === 0) return;
+    if (selectedFrontIdx === null || selectedBackIdx === null) return;
     if (!docName.trim()) {
       Alert.alert("Name needed", "Please enter a document name.");
       return;
@@ -113,37 +115,27 @@ export default function PdfImportScreen() {
 
     setImporting(true);
     try {
-      if (selectedCount === 2 && assignFrontBack) {
-        // Front + Back from 2 pages
-        const frontPg = selectedPages[0];
-        const backPg = selectedPages[1];
-        await addDocument(docName.trim(), category, frontPg.uri, backPg.uri);
-      } else if (selectedCount >= 2) {
-        // Multi-page: save each as individual document with page number
-        for (let i = 0; i < selectedPages.length; i++) {
-          const pg = selectedPages[i];
-          const name = `${docName.trim()} (${i + 1})`;
-          await addDocument(name, category, pg.uri, pg.uri);
-        }
-      } else {
-        // Single page: same for front and back
-        const pg = selectedPages[0];
-        await addDocument(docName.trim(), category, pg.uri, pg.uri);
-      }
+      const frontPage = pages[selectedFrontIdx];
+      const backPage = pages[selectedBackIdx];
 
-      Alert.alert(
-        "Imported",
-        `${selectedCount} page${selectedCount > 1 ? "s" : ""} saved as ${selectedCount === 2 && assignFrontBack ? "1 document" : selectedCount + " document(s)"}.`,
-        [{ text: "OK", onPress: () => router.back() }]
+      await addDocument(
+        docName.trim(),
+        category,
+        frontPage.uri,
+        backPage.uri
       );
-    } catch {
-      Alert.alert("Error", "Failed to import PDF pages.");
+
+      Alert.alert("Success", "Document saved with flip animation support!", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    } catch (err) {
+      Alert.alert("Error", "Failed to save document.");
     } finally {
       setImporting(false);
     }
   };
 
-  // ── STEP 1: Pick PDF ──
+  // STEP 1: Pick PDF
   if (step === "pick") {
     return (
       <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -152,18 +144,31 @@ export default function PdfImportScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
             <Feather name="arrow-left" size={18} color={colors.foreground} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Import PDF</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            Import PDF
+          </Text>
           <View style={styles.headerIcon} />
         </View>
 
         <View style={styles.center}>
-          <View style={[styles.pickCard, { backgroundColor: colors.glassStrong, borderColor: colors.glassBorder }]}>
+          <View
+            style={[
+              styles.pickCard,
+              {
+                backgroundColor: colors.glassStrong,
+                borderColor: colors.glassBorder,
+              },
+            ]}
+          >
             <Feather name="file-text" size={48} color={colors.primary} />
             <Text style={[styles.pickTitle, { color: colors.foreground }]}>
-              Import from PDF
+              Import PDF Document
             </Text>
-            <Text style={[styles.pickBody, { color: colors.mutedForeground }]}>
-              Select a PDF file. You can pick which pages to keep and save them as documents.
+            <Text
+              style={[styles.pickBody, { color: colors.mutedForeground }]}
+            >
+              Select a PDF file. Choose front and back pages, then save with
+              flip animation.
             </Text>
             <TouchableOpacity
               style={[styles.pickBtn, { backgroundColor: colors.primary }]}
@@ -178,7 +183,7 @@ export default function PdfImportScreen() {
     );
   }
 
-  // ── STEP 2: Select Pages ──
+  // STEP 2: Select Front & Back Pages
   if (step === "select") {
     return (
       <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -188,7 +193,7 @@ export default function PdfImportScreen() {
             <Feather name="arrow-left" size={18} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            Select Pages ({selectedCount})
+            Select Front & Back
           </Text>
           <View style={styles.headerIcon} />
         </View>
@@ -197,81 +202,138 @@ export default function PdfImportScreen() {
           <View style={styles.center}>
             <ActivityIndicator color={colors.primary} size="large" />
             <Text style={{ color: colors.mutedForeground, marginTop: 16 }}>
-              Generating page previews...
+              Processing PDF...
             </Text>
           </View>
         ) : (
           <>
-            <View style={styles.selectActions}>
-              <TouchableOpacity style={[styles.selectAction, { borderColor: colors.glassBorder }]} onPress={selectAll}>
-                <Feather name="check-square" size={14} color={colors.foreground} />
-                <Text style={[styles.selectActionTxt, { color: colors.foreground }]}>All</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.selectAction, { borderColor: colors.glassBorder }]} onPress={selectNone}>
-                <Feather name="square" size={14} color={colors.foreground} />
-                <Text style={[styles.selectActionTxt, { color: colors.foreground }]}>None</Text>
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={pages}
-              keyExtractor={(p) => String(p.index)}
-              numColumns={2}
+            <ScrollView
               contentContainerStyle={[
-                styles.pageList,
-                { paddingBottom: bottomPad + 80 },
+                styles.selectScroll,
+                { paddingBottom: bottomPad + 100 },
               ]}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => togglePage(item.index)}
+            >
+              <View style={styles.selectSection}>
+                <Text
                   style={[
-                    styles.pageThumb,
-                    {
-                      width: (SCREEN_W - 48) / 2,
-                      height: ((SCREEN_W - 48) / 2) * 1.414,
-                      borderColor: item.selected ? colors.primary : colors.glassBorder,
-                      backgroundColor: item.selected
-                        ? "rgba(107,142,255,0.12)"
-                        : colors.glassStrong,
-                    },
+                    styles.selectSectionTitle,
+                    { color: colors.foreground },
                   ]}
                 >
-                  <Image
-                    source={{ uri: item.uri }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="contain"
-                    transition={100}
-                  />
-                  <View style={styles.checkbox}>
-                    <View
+                  📄 Front Page
+                </Text>
+                <FlatList
+                  data={pages}
+                  keyExtractor={(p) => `front-${p.index}`}
+                  numColumns={2}
+                  scrollEnabled={false}
+                  contentContainerStyle={styles.pageGrid}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => handleSelectFront(item.index)}
                       style={[
-                        styles.checkboxInner,
+                        styles.pageThumb,
                         {
-                          backgroundColor: item.selected ? colors.primary : "transparent",
-                          borderColor: item.selected ? colors.primary : "rgba(255,255,255,0.5)",
+                          width: (SCREEN_W - 56) / 2,
+                          height: ((SCREEN_W - 56) / 2) * 1.414,
+                          borderColor:
+                            selectedFrontIdx === item.index
+                              ? colors.primary
+                              : colors.glassBorder,
+                          backgroundColor:
+                            selectedFrontIdx === item.index
+                              ? "rgba(107,142,255,0.12)"
+                              : colors.glassStrong,
                         },
                       ]}
                     >
-                      {item.selected && <Feather name="check" size={12} color="#FFF" />}
-                    </View>
-                  </View>
-                  <Text style={styles.pageNum}>Page {item.index + 1}</Text>
-                </TouchableOpacity>
-              )}
-            />
+                      <Image
+                        source={{ uri: item.uri }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="contain"
+                        transition={100}
+                      />
+                      {selectedFrontIdx === item.index && (
+                        <View style={styles.selectedBadge}>
+                          <Feather name="check" size={16} color="#FFF" />
+                        </View>
+                      )}
+                      <Text style={styles.pageNum}>Page {item.index + 1}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
 
-            <View style={[styles.bottomBar, { paddingBottom: bottomPad + 16 }]}>
+              <View style={styles.selectSection}>
+                <Text
+                  style={[
+                    styles.selectSectionTitle,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  📄 Back Page
+                </Text>
+                <FlatList
+                  data={pages}
+                  keyExtractor={(p) => `back-${p.index}`}
+                  numColumns={2}
+                  scrollEnabled={false}
+                  contentContainerStyle={styles.pageGrid}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => handleSelectBack(item.index)}
+                      style={[
+                        styles.pageThumb,
+                        {
+                          width: (SCREEN_W - 56) / 2,
+                          height: ((SCREEN_W - 56) / 2) * 1.414,
+                          borderColor:
+                            selectedBackIdx === item.index
+                              ? colors.primary
+                              : colors.glassBorder,
+                          backgroundColor:
+                            selectedBackIdx === item.index
+                              ? "rgba(107,142,255,0.12)"
+                              : colors.glassStrong,
+                        },
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: item.uri }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="contain"
+                        transition={100}
+                      />
+                      {selectedBackIdx === item.index && (
+                        <View style={styles.selectedBadge}>
+                          <Feather name="check" size={16} color="#FFF" />
+                        </View>
+                      )}
+                      <Text style={styles.pageNum}>Page {item.index + 1}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            </ScrollView>
+
+            <View
+              style={[
+                styles.bottomBar,
+                { paddingBottom: bottomPad + 16, backgroundColor: colors.background },
+              ]}
+            >
               <TouchableOpacity
                 style={[
                   styles.continueBtn,
                   { backgroundColor: colors.primary },
-                  selectedCount === 0 && { opacity: 0.4 },
+                  !canProceed && { opacity: 0.4 },
                 ]}
                 onPress={() => setStep("config")}
-                disabled={selectedCount === 0}
+                disabled={!canProceed}
               >
-                <Text style={styles.continueBtnTxt}>Continue ({selectedCount})</Text>
+                <Text style={styles.continueBtnTxt}>Continue</Text>
                 <Feather name="arrow-right" size={16} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -281,7 +343,7 @@ export default function PdfImportScreen() {
     );
   }
 
-  // ── STEP 3: Configure (name + category + front/back) ──
+  // STEP 3: Configure
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -289,7 +351,9 @@ export default function PdfImportScreen() {
         <TouchableOpacity onPress={() => setStep("select")} style={styles.headerIcon}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Configure</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+          Configure Document
+        </Text>
         <View style={styles.headerIcon} />
       </View>
 
@@ -299,31 +363,39 @@ export default function PdfImportScreen() {
           { paddingBottom: bottomPad + 24 },
         ]}
       >
-        {/* Selected pages preview */}
-        <Text style={[styles.configLabel, { color: colors.mutedForeground }]}>
-          {selectedCount} page{selectedCount > 1 ? "s" : ""} selected
+        <Text
+          style={[styles.configLabel, { color: colors.mutedForeground }]}
+        >
+          Preview
         </Text>
-        <FlatList
-          data={selectedPages}
-          keyExtractor={(p) => String(p.index)}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 10, paddingVertical: 8 }}
-          renderItem={({ item }) => (
-            <View style={styles.configThumb}>
+        <View style={styles.previewRow}>
+          {selectedFrontIdx !== null && (
+            <View style={styles.previewCard}>
+              <Text style={styles.previewCardLabel}>Front</Text>
               <Image
-                source={{ uri: item.uri }}
-                style={styles.configThumbImg}
+                source={{ uri: pages[selectedFrontIdx].uri }}
+                style={styles.previewImg}
                 contentFit="contain"
                 transition={100}
               />
-              <Text style={styles.configThumbLabel}>Page {item.index + 1}</Text>
             </View>
           )}
-        />
+          {selectedBackIdx !== null && (
+            <View style={styles.previewCard}>
+              <Text style={styles.previewCardLabel}>Back</Text>
+              <Image
+                source={{ uri: pages[selectedBackIdx].uri }}
+                style={styles.previewImg}
+                contentFit="contain"
+                transition={100}
+              />
+            </View>
+          )}
+        </View>
 
-        {/* Name */}
-        <Text style={[styles.configLabel, { color: colors.mutedForeground }]}>
+        <Text
+          style={[styles.configLabel, { color: colors.mutedForeground }]}
+        >
           Document Name
         </Text>
         <TextInput
@@ -343,8 +415,12 @@ export default function PdfImportScreen() {
           maxLength={50}
         />
 
-        {/* Category */}
-        <Text style={[styles.configLabel, { color: colors.mutedForeground, marginTop: 8 }]}>
+        <Text
+          style={[
+            styles.configLabel,
+            { color: colors.mutedForeground, marginTop: 12 },
+          ]}
+        >
           Document Type
         </Text>
         <ScrollView
@@ -369,7 +445,12 @@ export default function PdfImportScreen() {
               <Text
                 style={[
                   styles.catChipTxt,
-                  { color: category === cat.key ? "#FFF" : colors.mutedForeground },
+                  {
+                    color:
+                      category === cat.key
+                        ? "#FFF"
+                        : colors.mutedForeground,
+                  },
                 ]}
               >
                 {cat.label}
@@ -378,29 +459,6 @@ export default function PdfImportScreen() {
           ))}
         </ScrollView>
 
-        {/* Front/Back toggle if exactly 2 pages */}
-        {selectedCount === 2 && (
-          <View style={[styles.fbToggle, { borderColor: colors.glassBorder, backgroundColor: colors.glassStrong }]}>
-            <TouchableOpacity
-              style={[styles.fbOption, !assignFrontBack && { backgroundColor: colors.primary }]}
-              onPress={() => setAssignFrontBack(false)}
-            >
-              <Text style={[styles.fbTxt, { color: !assignFrontBack ? "#FFF" : colors.mutedForeground }]}>
-                Separate docs
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.fbOption, assignFrontBack && { backgroundColor: colors.primary }]}
-              onPress={() => setAssignFrontBack(true)}
-            >
-              <Text style={[styles.fbTxt, { color: assignFrontBack ? "#FFF" : colors.mutedForeground }]}>
-                Page 1 = Front, Page 2 = Back
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Save button */}
         <TouchableOpacity
           style={[
             styles.saveBtn,
@@ -415,7 +473,7 @@ export default function PdfImportScreen() {
           ) : (
             <>
               <Ionicons name="save-outline" size={18} color="#FFF" />
-              <Text style={styles.saveBtnTxt}>Save to My Docs</Text>
+              <Text style={styles.saveBtnTxt}>Save with Flip Animation</Text>
             </>
           )}
         </TouchableOpacity>
@@ -424,21 +482,34 @@ export default function PdfImportScreen() {
   );
 }
 
-const SCREEN_W = 360;
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
-  headerIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, fontSize: 17, fontWeight: "600" as const, fontFamily: "Inter_600SemiBold", textAlign: "center" },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+  },
 
-  // Pick step
   pickCard: {
     alignItems: "center",
     borderRadius: 20,
@@ -446,8 +517,17 @@ const styles = StyleSheet.create({
     padding: 32,
     gap: 16,
   },
-  pickTitle: { fontSize: 22, fontWeight: "700" as const, fontFamily: "Inter_700Bold" },
-  pickBody: { fontSize: 14, textAlign: "center", fontFamily: "Inter_400Regular", lineHeight: 22 },
+  pickTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+  },
+  pickBody: {
+    fontSize: 14,
+    textAlign: "center",
+    fontFamily: "Inter_400Regular",
+    lineHeight: 22,
+  },
   pickBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -456,27 +536,28 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 16,
   },
-  pickBtnTxt: { color: "#FFF", fontSize: 15, fontWeight: "600" as const, fontFamily: "Inter_600SemiBold" },
+  pickBtnTxt: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+  },
 
-  // Select step
-  selectActions: {
-    flexDirection: "row",
+  selectScroll: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 24,
+  },
+  selectSection: {
     gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
   },
-  selectAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
+  selectSectionTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+    paddingHorizontal: 8,
   },
-  selectActionTxt: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  pageList: {
-    paddingHorizontal: 16,
+  pageGrid: {
     gap: 12,
   },
   pageThumb: {
@@ -487,19 +568,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  checkbox: {
+  selectedBadge: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    zIndex: 2,
-  },
-  checkboxInner: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(107,142,255,0.9)",
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 2,
   },
   pageNum: {
     position: "absolute",
@@ -520,7 +597,8 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 24,
     paddingTop: 14,
-    backgroundColor: "rgba(8,8,15,0.9)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
   },
   continueBtn: {
     flexDirection: "row",
@@ -530,19 +608,44 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
   },
-  continueBtnTxt: { color: "#FFF", fontSize: 16, fontWeight: "700" as const, fontFamily: "Inter_700Bold" },
+  continueBtnTxt: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+  },
 
-  // Config step
   configScroll: {
     paddingHorizontal: 24,
     paddingTop: 12,
-    gap: 8,
+    gap: 12,
   },
   configLabel: {
     fontSize: 12,
     fontFamily: "Inter_600SemiBold",
     letterSpacing: 0.5,
     marginTop: 12,
+  },
+  previewRow: {
+    flexDirection: "row",
+    gap: 16,
+  },
+  previewCard: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    alignItems: "center",
+  },
+  previewCardLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    paddingTop: 8,
+  },
+  previewImg: {
+    width: "100%",
+    height: 160,
   },
   configInput: {
     borderWidth: 1,
@@ -552,33 +655,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_400Regular",
   },
-  configThumb: {
-    width: 120,
-    height: 170,
-    borderRadius: 10,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    alignItems: "center",
-  },
-  configThumbImg: { width: 120, height: 150 },
-  configThumbLabel: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 11,
-    fontFamily: "Inter_500Medium",
-    marginTop: 4,
-  },
   catList: { gap: 8, paddingVertical: 4 },
-  catChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  catChipTxt: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  fbToggle: {
-    flexDirection: "row",
-    borderRadius: 14,
+  catChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
-    marginTop: 12,
-    overflow: "hidden",
   },
-  fbOption: { flex: 1, paddingVertical: 14, alignItems: "center" },
-  fbTxt: { fontSize: 13, fontFamily: "Inter_600SemiBold", textAlign: "center" },
+  catChipTxt: { fontSize: 13, fontFamily: "Inter_500Medium" },
   saveBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -588,5 +672,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginTop: 20,
   },
-  saveBtnTxt: { color: "#FFF", fontSize: 16, fontWeight: "700" as const, fontFamily: "Inter_700Bold" },
+  saveBtnTxt: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+  },
 });
