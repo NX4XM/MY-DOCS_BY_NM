@@ -1,10 +1,9 @@
 {
   "expo": {
-    "name": "My Docs by NM",
-    "slug": "my-docs-by-nm",
-    "version": "1.0.0",
-    "android": {
-      "package": "com.noor.mydocsbynm"
-    }
+    "name": "Docs by NM v2",
+    "slug": "docs-by-nm-v2",
+    "version": "2.0.0",
+    "scheme": "docsbynmv2",
+    ...
   }
 }
